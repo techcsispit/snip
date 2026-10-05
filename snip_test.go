@@ -39,6 +39,16 @@ func TestShortenAndFollow(t *testing.T) {
 	}
 }
 
+func TestURLWithoutScheme(t *testing.T) {
+        srv := NewServer()
+        link := create(t, srv, `{"url": "go.dev"}`)
+
+        rec := do(t, srv, "GET", "/"+link["code"].(string), "")
+        if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://go.dev" {
+                t.Fatalf("got %d to %q", rec.Code, rec.Header().Get("Location"))
+        }
+}
+
 func TestCustomAlias(t *testing.T) {
 	srv := NewServer()
 	link := create(t, srv, `{"url": "https://hacktoberfest.com", "alias": "hack-2026"}`)

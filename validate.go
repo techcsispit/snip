@@ -9,7 +9,17 @@ import (
 var aliasPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{3,20}$`)
 
 func normalizeURL(raw string) string {
-	return strings.TrimSpace(raw)
+	raw = strings.TrimSpace(raw)
+
+	if raw == "" {
+		return raw
+	}
+
+	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+		raw = "https://" + raw
+	}
+
+	return raw
 }
 
 func validURL(raw string) bool {
