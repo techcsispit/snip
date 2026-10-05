@@ -140,7 +140,7 @@ func (s *Server) follow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusGone, "This link has expired.")
 		return
 	}
-	link.Clicks++
+	s.store.Click(link.Code)
 	http.Redirect(w, r, link.URL, http.StatusFound)
 }
 

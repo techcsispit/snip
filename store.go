@@ -58,3 +58,9 @@ func (s *Store) List() []*Link {
 	}
 	return list
 }
+
+func (s *Store) Click(code string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.links[code].Clicks++
+}

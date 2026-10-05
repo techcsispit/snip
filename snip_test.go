@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -82,5 +83,41 @@ func TestListLinks(t *testing.T) {
 	json.Unmarshal(do(t, srv, "GET", "/api/links", "").Body.Bytes(), &links)
 	if len(links) != 2 {
 		t.Fatalf("got %d links, want 2", len(links))
+	}
+}
+
+func TestConcurrentFollows(t *testing.T) {
+	srv := NewServer()
+	link := create(t, srv, `{"url": "https://hacktoberfest.com", "alias": "hack-2026"}`)
+	var wg sync.WaitGroup
+	concurrentRequests := 10000
+	wg.Add(concurrentRequests)
+
+	for i := 0; i < concurrentRequests; i++ {
+		go func() {
+			defer wg.Done()
+
+			rec := do(t, srv, "GET", "/"+link["code"].(string), "")
+
+			if rec.Code != http.StatusFound {
+				t.Fatalf("got %d to %q", rec.Code, rec.Header().Get("Location"))
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	rec := do(t, srv, "GET", "/api/links/"+link["code"].(string), "")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stats: got status %d, want 200", rec.Code)
+	}
+	var stats Link
+	if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+		t.Fatalf("failed to decode stats: %v", err)
+	}
+
+	if stats.Clicks != concurrentRequests {
+		t.Fatalf("clicks mismatch: got %d, want %d", stats.Clicks, concurrentRequests)
 	}
 }
