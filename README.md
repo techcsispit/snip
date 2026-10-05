@@ -1,6 +1,6 @@
 # snip
 
-A link shortener written in Go, using only the standard library. Links are kept in memory, so they're gone when the server restarts.
+A link shortener written in Go, using only the standard library. Links are persisted to `links.json` and restored when the server restarts.
 
 ## Running it
 
@@ -10,6 +10,8 @@ You need Go 1.22 or newer.
 go run .        # http://localhost:8080
 go test ./...
 ```
+
+Set `STORE_PATH` to use a different file than `links.json`.
 
 ## API
 
@@ -41,7 +43,7 @@ curl -i localhost:8080/go
 
 - `main.go`: starts the server
 - `handlers.go`: request handlers
-- `store.go`: in-memory storage
+- `store.go`: persistent storage with atomic writes
 - `validate.go`: URL and alias checks
 - `static/index.html`: the web page
 

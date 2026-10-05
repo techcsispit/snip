@@ -27,3 +27,7 @@ desktop.ini
 .env.*
 !.env.example
 *.log
+
+# Persistent storage
+links.json
+*.tmp

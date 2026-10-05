@@ -21,8 +21,8 @@ type Server struct {
 	mux   *http.ServeMux
 }
 
-func NewServer() *Server {
-	s := &Server{store: NewStore(), mux: http.NewServeMux()}
+func NewServer(storePath string) *Server {
+	s := &Server{store: NewStore(storePath), mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /{$}", s.index)
 	s.mux.HandleFunc("POST /api/links", s.createLink)
 	s.mux.HandleFunc("GET /api/links", s.listLinks)
@@ -130,7 +130,8 @@ func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) follow(w http.ResponseWriter, r *http.Request) {
-	link := s.store.Get(r.PathValue("code"))
+	code := r.PathValue("code")
+	link := s.store.Get(code)
 
 	if link == nil {
 		writeError(w, http.StatusNotFound, "This link was not found.")
@@ -140,7 +141,7 @@ func (s *Server) follow(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusGone, "This link has expired.")
 		return
 	}
-	link.Clicks++
+	s.store.IncrementClicks(code)
 	http.Redirect(w, r, link.URL, http.StatusFound)
 }
 
