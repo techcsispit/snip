@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -41,13 +42,14 @@ func TestShortenAndFollow(t *testing.T) {
 }
 
 func TestURLWithoutScheme(t *testing.T) {
-        srv := NewServer()
-        link := create(t, srv, `{"url": "go.dev"}`)
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	link := create(t, srv, `{"url": "go.dev"}`)
 
-        rec := do(t, srv, "GET", "/"+link["code"].(string), "")
-        if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://go.dev" {
-                t.Fatalf("got %d to %q", rec.Code, rec.Header().Get("Location"))
-        }
+	rec := do(t, srv, "GET", "/"+link["code"].(string), "")
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://go.dev" {
+		t.Fatalf("got %d to %q", rec.Code, rec.Header().Get("Location"))
+	}
 }
 
 func TestCustomAlias(t *testing.T) {
@@ -241,5 +243,117 @@ func TestRepeatedPersistence(t *testing.T) {
 	}
 	if clickCount != 5 {
 		t.Errorf("after reload: expected 5 total clicks, got %d", clickCount)
+	}
+}
+
+func TestConcurrentFollows(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	link := create(t, srv, `{"url": "https://hacktoberfest.com", "alias": "hack-2026"}`)
+	var wg sync.WaitGroup
+	concurrentRequests := 10000
+	wg.Add(concurrentRequests)
+
+	for i := 0; i < concurrentRequests; i++ {
+		go func() {
+			defer wg.Done()
+
+			rec := do(t, srv, "GET", "/"+link["code"].(string), "")
+
+			if rec.Code != http.StatusFound {
+				t.Errorf("got %d to %q", rec.Code, rec.Header().Get("Location"))
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	rec := do(t, srv, "GET", "/api/links/"+link["code"].(string), "")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stats: got status %d, want 200", rec.Code)
+	}
+	var stats Link
+	if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+		t.Fatalf("failed to decode stats: %v", err)
+	}
+
+	if stats.Clicks != concurrentRequests {
+		t.Fatalf("clicks mismatch: got %d, want %d", stats.Clicks, concurrentRequests)
+	}
+}
+
+func TestConcurrentFollowAndList(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	link := create(t, srv, `{"url": "https://hacktoberfest.com", "alias": "hack-2026"}`)
+	var wg sync.WaitGroup
+	concurrentRequests := 10000
+	listRequests := 100
+	wg.Add(concurrentRequests + listRequests)
+
+	for i := 0; i < concurrentRequests; i++ {
+		go func() {
+			defer wg.Done()
+
+			rec := do(t, srv, "GET", "/"+link["code"].(string), "")
+
+			if rec.Code != http.StatusFound {
+				t.Errorf("got %d to %q", rec.Code, rec.Header().Get("Location"))
+			}
+		}()
+	}
+
+	for i := 0; i < listRequests; i++ {
+		go func() {
+			defer wg.Done()
+
+			rec := do(t, srv, "GET", "/api/links", "")
+
+			if rec.Code != http.StatusOK {
+				t.Errorf("list: got status %d, want 200", rec.Code)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestConcurrentFollowAndDelete(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	link := create(t, srv, `{"url": "https://hacktoberfest.com", "alias": "hack-2026"}`)
+	var wg sync.WaitGroup
+	concurrentRequests := 10000
+	wg.Add(concurrentRequests + 1)
+
+	for i := 0; i < concurrentRequests; i++ {
+		go func() {
+			defer wg.Done()
+
+			rec := do(t, srv, "GET", "/"+link["code"].(string), "")
+
+			if rec.Code != http.StatusFound && rec.Code != http.StatusNotFound {
+				t.Errorf("got %d to %q", rec.Code, rec.Header().Get("Location"))
+			}
+		}()
+	}
+
+	go func() {
+		defer wg.Done()
+
+		rec := do(t, srv, "DELETE", "/api/links/"+link["code"].(string), "", "X-Delete-Token", link["delete_token"].(string))
+
+		if rec.Code != http.StatusNoContent && rec.Code != http.StatusNotFound {
+			t.Errorf("delete: got status %d", rec.Code)
+		}
+	}()
+
+	wg.Wait()
+
+	rec := do(t, srv, "GET", "/api/links/"+link["code"].(string), "")
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("after delete: got status %d, want 404", rec.Code)
 	}
 }
