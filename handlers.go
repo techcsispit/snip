@@ -158,7 +158,7 @@ func (s *Server) deleteLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := r.Header.Get("X-Delete-Token")
-	if token != "" && token != link.deleteToken {
+	if token != link.deleteToken {
 		writeError(w, http.StatusForbidden, "Wrong delete token.")
 		return
 	}

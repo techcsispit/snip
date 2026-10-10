@@ -118,6 +118,161 @@ func TestDeleteWithToken(t *testing.T) {
 	}
 }
 
+func TestDeleteWithoutToken(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	create(t, srv, `{"url": "https://go.dev", "alias": "keep"}`)
+	rec := do(t, srv, "DELETE", "/api/links/keep", "")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("delete without token: got %d, want 403", rec.Code)
+	}
+	var errResp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &errResp); err != nil || errResp["error"] != "Wrong delete token." {
+		t.Fatalf("unexpected error response: %s", rec.Body.String())
+	}
+	if rec := do(t, srv, "GET", "/api/links/keep", ""); rec.Code != http.StatusOK {
+		t.Fatalf("link should still exist after unauthorized delete: got %d", rec.Code)
+	}
+}
+
+func TestDeleteWithEmptyToken(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	create(t, srv, `{"url": "https://go.dev", "alias": "keep-empty"}`)
+	rec := do(t, srv, "DELETE", "/api/links/keep-empty", "", "X-Delete-Token", "")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("delete with empty token: got %d, want 403", rec.Code)
+	}
+	if rec := do(t, srv, "GET", "/api/links/keep-empty", ""); rec.Code != http.StatusOK {
+		t.Fatalf("link should still exist after unauthorized delete: got %d", rec.Code)
+	}
+}
+
+func TestDeleteWithWrongToken(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	create(t, srv, `{"url": "https://go.dev", "alias": "keep2"}`)
+	rec := do(t, srv, "DELETE", "/api/links/keep2", "", "X-Delete-Token", "wrong-token")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("delete with wrong token: got %d, want 403", rec.Code)
+	}
+	if rec := do(t, srv, "GET", "/api/links/keep2", ""); rec.Code != http.StatusOK {
+		t.Fatalf("link should still exist after unauthorized delete: got %d", rec.Code)
+	}
+}
+
+func TestDeleteTokenCrossLinkIsolation(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	link1 := create(t, srv, `{"url": "https://go.dev", "alias": "link-one"}`)
+	link2 := create(t, srv, `{"url": "https://github.com", "alias": "link-two"}`)
+
+	token1 := link1["delete_token"].(string)
+	token2 := link2["delete_token"].(string)
+
+	// Try to delete link1 with link2's token
+	if rec := do(t, srv, "DELETE", "/api/links/link-one", "", "X-Delete-Token", token2); rec.Code != http.StatusForbidden {
+		t.Fatalf("deleting link1 with token2: got %d, want 403", rec.Code)
+	}
+
+	// Try to delete link2 with link1's token
+	if rec := do(t, srv, "DELETE", "/api/links/link-two", "", "X-Delete-Token", token1); rec.Code != http.StatusForbidden {
+		t.Fatalf("deleting link2 with token1: got %d, want 403", rec.Code)
+	}
+
+	// Verify both links are still present
+	if rec := do(t, srv, "GET", "/api/links/link-one", ""); rec.Code != http.StatusOK {
+		t.Fatalf("link-one should still exist: got %d", rec.Code)
+	}
+	if rec := do(t, srv, "GET", "/api/links/link-two", ""); rec.Code != http.StatusOK {
+		t.Fatalf("link-two should still exist: got %d", rec.Code)
+	}
+
+	// Delete link1 with its own token
+	if rec := do(t, srv, "DELETE", "/api/links/link-one", "", "X-Delete-Token", token1); rec.Code != http.StatusNoContent {
+		t.Fatalf("authorized delete link1: got %d, want 204", rec.Code)
+	}
+	if rec := do(t, srv, "GET", "/api/links/link-one", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("link-one should be gone: got %d", rec.Code)
+	}
+
+	// link2 should still exist
+	if rec := do(t, srv, "GET", "/api/links/link-two", ""); rec.Code != http.StatusOK {
+		t.Fatalf("link-two should still exist: got %d", rec.Code)
+	}
+}
+
+func TestDeleteUnauthorizedPreservesStats(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	create(t, srv, `{"url": "https://go.dev", "alias": "stat-link"}`)
+
+	// Click twice
+	do(t, srv, "GET", "/stat-link", "")
+	do(t, srv, "GET", "/stat-link", "")
+
+	// Unauthorized delete attempts
+	do(t, srv, "DELETE", "/api/links/stat-link", "")
+	do(t, srv, "DELETE", "/api/links/stat-link", "", "X-Delete-Token", "invalid")
+	do(t, srv, "DELETE", "/api/links/stat-link", "", "X-Delete-Token", "")
+
+	// Check stats
+	rec := do(t, srv, "GET", "/api/links/stat-link", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stats fetch failed: %d", rec.Code)
+	}
+	var stats Link
+	json.Unmarshal(rec.Body.Bytes(), &stats)
+	if stats.Clicks != 2 {
+		t.Fatalf("clicks changed after unauthorized deletes: got %d, want 2", stats.Clicks)
+	}
+}
+
+func TestConcurrentUnauthorizedDeletes(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	link := create(t, srv, `{"url": "https://go.dev", "alias": "secure-concurrent"}`)
+	validToken := link["delete_token"].(string)
+
+	const attempts = 100
+	var wg sync.WaitGroup
+	wg.Add(attempts)
+
+	for i := 0; i < attempts; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			var rec *httptest.ResponseRecorder
+			if idx%2 == 0 {
+				rec = do(t, srv, "DELETE", "/api/links/secure-concurrent", "")
+			} else {
+				rec = do(t, srv, "DELETE", "/api/links/secure-concurrent", "", "X-Delete-Token", "bad-token")
+			}
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("unauthorized delete got status %d, want 403", rec.Code)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Link must still be available
+	rec := do(t, srv, "GET", "/api/links/secure-concurrent", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("link deleted prematurely: got %d", rec.Code)
+	}
+
+	// Authorized delete must succeed
+	recDel := do(t, srv, "DELETE", "/api/links/secure-concurrent", "", "X-Delete-Token", validToken)
+	if recDel.Code != http.StatusNoContent {
+		t.Fatalf("authorized delete failed: got %d", recDel.Code)
+	}
+
+	// Now it must be 404
+	if recAfter := do(t, srv, "GET", "/api/links/secure-concurrent", ""); recAfter.Code != http.StatusNotFound {
+		t.Fatalf("link still exists after authorized delete: got %d", recAfter.Code)
+	}
+}
+
 func TestListLinks(t *testing.T) {
 	srv := NewServer(t.TempDir() + "/links.json")
 	defer srv.store.Close()
