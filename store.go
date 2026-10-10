@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -79,11 +80,13 @@ func (s *Store) load() {
 func (s *Store) saveWorker() {
 	defer s.wg.Done()
 	for range s.saveCh {
-		s.persist()
+		if err := s.persist(); err != nil {
+			log.Printf("could not save %s: %v", s.filePath, err)
+		}
 	}
 }
 
-func (s *Store) persist() {
+func (s *Store) persist() error {
 	s.mu.RLock()
 	persisted := make([]persistedLink, 0, len(s.links))
 	for _, link := range s.links {
@@ -100,30 +103,35 @@ func (s *Store) persist() {
 
 	data, err := json.MarshalIndent(persisted, "", "  ")
 	if err != nil {
-		return
+		return err
 	}
 
+	// STORE_PATH may point into a folder that does not exist yet.
 	dir := filepath.Dir(s.filePath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
 	tmpFile, err := os.CreateTemp(dir, "links.*.tmp")
 	if err != nil {
-		return
+		return err
 	}
 	tmpPath := tmpFile.Name()
 
 	if _, err := tmpFile.Write(data); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
-		return
+		return err
 	}
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
-		return
+		return err
 	}
 
 	if err := os.Rename(tmpPath, s.filePath); err != nil {
 		os.Remove(tmpPath)
-		return
+		return err
 	}
+	return nil
 }
 
 func (s *Store) requestSave() {
