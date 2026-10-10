@@ -24,8 +24,8 @@ Set `STORE_PATH` to use a different file than `links.json`.
 | `GET /api/links?limit=N` | Newest links first, 20 by default |
 
 ```
-curl -X POST localhost:8080/api/links -d '{"url": "https://go.dev", "alias": "go"}'
-curl -i localhost:8080/go
+curl -X POST localhost:8080/api/links -d '{"url": "https://go.dev", "alias": "godev"}'
+curl -i localhost:8080/godev
 ```
 
 ## How it's supposed to work
