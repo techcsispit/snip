@@ -118,6 +118,32 @@ func TestDeleteWithToken(t *testing.T) {
 	}
 }
 
+func TestDeleteWithoutToken(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	create(t, srv, `{"url": "https://go.dev", "alias": "keep"}`)
+	rec := do(t, srv, "DELETE", "/api/links/keep", "")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("delete without token: got %d, want 403", rec.Code)
+	}
+	if rec := do(t, srv, "GET", "/api/links/keep", ""); rec.Code != http.StatusOK {
+		t.Fatalf("link should still exist after unauthorized delete: got %d", rec.Code)
+	}
+}
+
+func TestDeleteWithWrongToken(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	create(t, srv, `{"url": "https://go.dev", "alias": "keep2"}`)
+	rec := do(t, srv, "DELETE", "/api/links/keep2", "", "X-Delete-Token", "wrong-token")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("delete with wrong token: got %d, want 403", rec.Code)
+	}
+	if rec := do(t, srv, "GET", "/api/links/keep2", ""); rec.Code != http.StatusOK {
+		t.Fatalf("link should still exist after unauthorized delete: got %d", rec.Code)
+	}
+}
+
 func TestListLinks(t *testing.T) {
 	srv := NewServer(t.TempDir() + "/links.json")
 	defer srv.store.Close()
