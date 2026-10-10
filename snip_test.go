@@ -52,6 +52,32 @@ func TestURLWithoutScheme(t *testing.T) {
 	}
 }
 
+func TestSchemeIsNormalized(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	for url, want := range map[string]string{
+		"HTTPS://go.dev":       "https://go.dev",
+		"Http://go.dev/doc":    "http://go.dev/doc",
+		"localhost:8080/admin": "https://localhost:8080/admin",
+	} {
+		link := create(t, srv, `{"url": "`+url+`"}`)
+		rec := do(t, srv, "GET", "/"+link["code"].(string), "")
+		if rec.Code != http.StatusFound || rec.Header().Get("Location") != want {
+			t.Errorf("%s: got %d to %q, want %q", url, rec.Code, rec.Header().Get("Location"), want)
+		}
+	}
+}
+
+func TestNonHTTPURLIsRejected(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+	for _, url := range []string{"ftp://example.com/file", "mailto:someone@example.com", "file:///etc/passwd", "https://", "http://"} {
+		if rec := do(t, srv, "POST", "/api/links", `{"url": "`+url+`"}`); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d, want 400", url, rec.Code)
+		}
+	}
+}
+
 func TestCustomAlias(t *testing.T) {
 	srv := NewServer(t.TempDir() + "/links.json")
 	defer srv.store.Close()
