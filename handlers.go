@@ -55,15 +55,6 @@ func randomString(chars string, n int) string {
 	return string(b)
 }
 
-func (s *Server) newCode() string {
-	for {
-		code := randomString(codeChars, 6)
-		if !s.store.Exists(code) {
-			return code
-		}
-	}
-}
-
 func newToken() string {
 	b := make([]byte, 16)
 	rand.Read(b)
@@ -95,22 +86,12 @@ func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code := req.Alias
-	if code != "" {
-		if !validAlias(code) {
-			writeError(w, http.StatusBadRequest, "Custom names must be 3-20 letters, numbers, - or _.")
-			return
-		}
-		if s.store.Exists(code) {
-			writeError(w, http.StatusConflict, "That custom name is already taken.")
-			return
-		}
-	} else {
-		code = s.newCode()
+	if req.Alias != "" && !validAlias(req.Alias) {
+		writeError(w, http.StatusBadRequest, "Custom names must be 3-20 letters, numbers, - or _.")
+		return
 	}
 
 	link := &Link{
-		Code:        code,
 		URL:         target,
 		CreatedAt:   time.Now(),
 		deleteToken: newToken(),
@@ -119,7 +100,23 @@ func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
 		expires := time.Now().Add(time.Duration(req.ExpiresIn) * time.Second)
 		link.ExpiresAt = &expires
 	}
-	s.store.Save(link)
+
+	// Claim the code and store the link in one step so two requests can never
+	// both win the same code.
+	if req.Alias != "" {
+		link.Code = req.Alias
+		if !s.store.Create(link) {
+			writeError(w, http.StatusConflict, "That custom name is already taken.")
+			return
+		}
+	} else {
+		for {
+			link.Code = randomString(codeChars, 6)
+			if s.store.Create(link) {
+				break
+			}
+		}
+	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"code":         link.Code,

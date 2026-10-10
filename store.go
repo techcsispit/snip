@@ -165,18 +165,19 @@ func (s *Store) Get(code string) *Link {
 	return &copy
 }
 
-func (s *Store) Exists(code string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	_, ok := s.links[code]
-	return ok
-}
-
-func (s *Store) Save(link *Link) {
+// Create stores the link only if its code is not taken. The check and the
+// insert happen under one lock, so of any number of concurrent calls with the
+// same code exactly one returns true.
+func (s *Store) Create(link *Link) bool {
 	s.mu.Lock()
+	if _, taken := s.links[link.Code]; taken {
+		s.mu.Unlock()
+		return false
+	}
 	s.links[link.Code] = link
 	s.mu.Unlock()
 	s.requestSave()
+	return true
 }
 
 func (s *Store) Delete(code string) {
