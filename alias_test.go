@@ -83,3 +83,63 @@ func TestConcurrentCreatesSameAlias(t *testing.T) {
 		}
 	}
 }
+
+// Store.Create is the atomic step behind the handler: of any number of
+// concurrent calls with the same code, exactly one stores its link and returns
+// true; the others return false and leave the stored link alone.
+func TestStoreCreateIsAtomic(t *testing.T) {
+	store := NewStore(t.TempDir() + "/links.json")
+	defer store.Close()
+
+	const rounds = 200
+	const callers = 64
+
+	for round := 0; round < rounds; round++ {
+		code := fmt.Sprintf("code-%d", round)
+
+		created := make([]bool, callers)
+		start := make(chan struct{})
+		var ready, done sync.WaitGroup
+		ready.Add(callers)
+		done.Add(callers)
+		for i := 0; i < callers; i++ {
+			go func(i int) {
+				defer done.Done()
+				link := &Link{Code: code, URL: fmt.Sprintf("https://example.com/%d/%d", round, i)}
+				ready.Done()
+				<-start // every caller is released together
+				created[i] = store.Create(link)
+			}(i)
+		}
+		ready.Wait()
+		close(start)
+		done.Wait()
+
+		winner := -1
+		for i, ok := range created {
+			if !ok {
+				continue
+			}
+			if winner != -1 {
+				t.Fatalf("round %d: callers %d and %d both created %q, want exactly one", round, winner, i, code)
+			}
+			winner = i
+		}
+		if winner == -1 {
+			t.Fatalf("round %d: no caller created %q, want exactly one", round, code)
+		}
+
+		want := fmt.Sprintf("https://example.com/%d/%d", round, winner)
+		if got := store.Get(code); got == nil || got.URL != want {
+			t.Fatalf("round %d: stored link is %+v, want the winner's url %q", round, got, want)
+		}
+	}
+
+	// A later create for a taken code is refused and keeps the first link.
+	if store.Create(&Link{Code: "code-0", URL: "https://example.com/late"}) {
+		t.Fatal("Create returned true for a code that is already taken")
+	}
+	if got := store.Get("code-0"); got == nil || got.URL == "https://example.com/late" {
+		t.Fatalf("a refused Create overwrote the stored link: %+v", got)
+	}
+}
