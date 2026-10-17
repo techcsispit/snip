@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -32,7 +34,10 @@ func create(t *testing.T, srv *Server, body string) map[string]any {
 }
 
 func TestShortenAndFollow(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	link := create(t, srv, `{"url": "https://go.dev"}`)
 	rec := do(t, srv, "GET", "/"+link["code"].(string), "")
@@ -42,7 +47,10 @@ func TestShortenAndFollow(t *testing.T) {
 }
 
 func TestURLWithoutScheme(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	link := create(t, srv, `{"url": "go.dev"}`)
 
@@ -53,7 +61,10 @@ func TestURLWithoutScheme(t *testing.T) {
 }
 
 func TestSchemeIsNormalized(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	for url, want := range map[string]string{
 		"HTTPS://go.dev":       "https://go.dev",
@@ -69,7 +80,10 @@ func TestSchemeIsNormalized(t *testing.T) {
 }
 
 func TestNonHTTPURLIsRejected(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	for _, url := range []string{"ftp://example.com/file", "mailto:someone@example.com", "file:///etc/passwd", "https://", "http://"} {
 		if rec := do(t, srv, "POST", "/api/links", `{"url": "`+url+`"}`); rec.Code != http.StatusBadRequest {
@@ -79,7 +93,10 @@ func TestNonHTTPURLIsRejected(t *testing.T) {
 }
 
 func TestCustomAlias(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	link := create(t, srv, `{"url": "https://hacktoberfest.com", "alias": "hack-2026"}`)
 	if link["code"] != "hack-2026" {
@@ -88,7 +105,10 @@ func TestCustomAlias(t *testing.T) {
 }
 
 func TestBadInputIsRejected(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	for _, body := range []string{`{"url": ""}`, `not json`, `{"url": "https://go.dev", "alias": "a!"}`} {
 		if rec := do(t, srv, "POST", "/api/links", body); rec.Code != http.StatusBadRequest {
@@ -98,7 +118,10 @@ func TestBadInputIsRejected(t *testing.T) {
 }
 
 func TestStatsForUnknownLink(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	if rec := do(t, srv, "GET", "/api/links/nope", ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("got %d, want 404", rec.Code)
@@ -106,7 +129,10 @@ func TestStatsForUnknownLink(t *testing.T) {
 }
 
 func TestDeleteWithToken(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	link := create(t, srv, `{"url": "https://go.dev", "alias": "gone"}`)
 	rec := do(t, srv, "DELETE", "/api/links/gone", "", "X-Delete-Token", link["delete_token"].(string))
@@ -119,7 +145,10 @@ func TestDeleteWithToken(t *testing.T) {
 }
 
 func TestDeleteWithoutToken(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	create(t, srv, `{"url": "https://go.dev", "alias": "keep"}`)
 	rec := do(t, srv, "DELETE", "/api/links/keep", "")
@@ -136,7 +165,10 @@ func TestDeleteWithoutToken(t *testing.T) {
 }
 
 func TestDeleteWithEmptyToken(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	create(t, srv, `{"url": "https://go.dev", "alias": "keep-empty"}`)
 	rec := do(t, srv, "DELETE", "/api/links/keep-empty", "", "X-Delete-Token", "")
@@ -149,7 +181,10 @@ func TestDeleteWithEmptyToken(t *testing.T) {
 }
 
 func TestDeleteWithWrongToken(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	create(t, srv, `{"url": "https://go.dev", "alias": "keep2"}`)
 	rec := do(t, srv, "DELETE", "/api/links/keep2", "", "X-Delete-Token", "wrong-token")
@@ -162,7 +197,10 @@ func TestDeleteWithWrongToken(t *testing.T) {
 }
 
 func TestDeleteTokenCrossLinkIsolation(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	link1 := create(t, srv, `{"url": "https://go.dev", "alias": "link-one"}`)
 	link2 := create(t, srv, `{"url": "https://github.com", "alias": "link-two"}`)
@@ -203,7 +241,10 @@ func TestDeleteTokenCrossLinkIsolation(t *testing.T) {
 }
 
 func TestDeleteUnauthorizedPreservesStats(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	create(t, srv, `{"url": "https://go.dev", "alias": "stat-link"}`)
 
@@ -229,7 +270,10 @@ func TestDeleteUnauthorizedPreservesStats(t *testing.T) {
 }
 
 func TestConcurrentUnauthorizedDeletes(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	link := create(t, srv, `{"url": "https://go.dev", "alias": "secure-concurrent"}`)
 	validToken := link["delete_token"].(string)
@@ -274,7 +318,10 @@ func TestConcurrentUnauthorizedDeletes(t *testing.T) {
 }
 
 func TestListLinks(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	create(t, srv, `{"url": "https://go.dev"}`)
 	create(t, srv, `{"url": "https://github.com"}`)
@@ -289,7 +336,10 @@ func TestPersistence(t *testing.T) {
 	storePath := t.TempDir() + "/links.json"
 
 	// Create first server and add links
-	srv1 := NewServer(storePath)
+	srv1, err := NewServer(storePath)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
 	create(t, srv1, `{"url": "https://go.dev", "alias": "persist1"}`)
 	link2 := create(t, srv1, `{"url": "https://github.com", "alias": "persist2"}`)
 
@@ -299,7 +349,10 @@ func TestPersistence(t *testing.T) {
 	srv1.store.Close()
 
 	// Create second server with same path
-	srv2 := NewServer(storePath)
+	srv2, err := NewServer(storePath)
+	if err != nil {
+		t.Fatalf("NewServer failed after restart: %v", err)
+	}
 	defer srv2.store.Close()
 
 	// Verify links were restored
@@ -325,7 +378,10 @@ func TestPersistence(t *testing.T) {
 }
 
 func TestConcurrentAccess(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 
 	link := create(t, srv, `{"url": "https://example.com", "alias": "concurrent"}`)
@@ -390,7 +446,10 @@ func TestConcurrentAccess(t *testing.T) {
 
 func TestRepeatedPersistence(t *testing.T) {
 	storePath := t.TempDir() + "/links.json"
-	srv := NewServer(storePath)
+	srv, err := NewServer(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Create links and trigger multiple saves
 	for i := 0; i < 10; i++ {
@@ -410,7 +469,10 @@ func TestRepeatedPersistence(t *testing.T) {
 	srv.store.Close()
 
 	// Reload and verify all data persisted correctly
-	srv2 := NewServer(storePath)
+	srv2, err := NewServer(storePath)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
 	defer srv2.store.Close()
 
 	links2 := srv2.store.List()
@@ -428,7 +490,10 @@ func TestRepeatedPersistence(t *testing.T) {
 }
 
 func TestConcurrentFollows(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	link := create(t, srv, `{"url": "https://hacktoberfest.com", "alias": "hack-2026"}`)
 	var wg sync.WaitGroup
@@ -465,7 +530,10 @@ func TestConcurrentFollows(t *testing.T) {
 }
 
 func TestConcurrentFollowAndList(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	link := create(t, srv, `{"url": "https://hacktoberfest.com", "alias": "hack-2026"}`)
 	var wg sync.WaitGroup
@@ -501,7 +569,10 @@ func TestConcurrentFollowAndList(t *testing.T) {
 }
 
 func TestConcurrentFollowAndDelete(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	link := create(t, srv, `{"url": "https://hacktoberfest.com", "alias": "hack-2026"}`)
 	var wg sync.WaitGroup
@@ -536,5 +607,90 @@ func TestConcurrentFollowAndDelete(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("after delete: got status %d, want 404", rec.Code)
+	}
+}
+
+func TestCorruptStoragePreserved(t *testing.T) {
+	storePath := t.TempDir() + "/bad.json"
+	os.WriteFile(storePath, []byte("bad"), 0644)
+	_, err := NewStore(storePath)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	// Original preserved; do not call s.Close() since s is nil on error
+	// Original corrupt file preserved as .corrupt
+	if _, err := os.Stat(storePath + ".corrupt"); err != nil {
+		t.Fatalf("corrupt file not preserved: %v", err)
+	}
+}
+
+func TestCorruptStorageErrorPropagated(t *testing.T) {
+	storePath := t.TempDir() + "/bad.json"
+	os.WriteFile(storePath, []byte("bad"), 0644)
+	s, err := NewStore(storePath)
+	if err == nil {
+		t.Fatal("expected error for corrupt storage")
+	}
+	if s != nil {
+		t.Fatalf("expected nil store on corrupt init, got %+v", s)
+	}
+	// Per contract: nil on corrupt init; must not be usable
+	if _, err := os.Stat(storePath + ".corrupt"); err != nil {
+		t.Fatalf("corrupt file not preserved: %v", err)
+	}
+	// Original bytes preserved
+	data, _ := os.ReadFile(storePath + ".corrupt")
+	if string(data) != "bad" {
+		t.Fatalf("original bytes lost")
+	}
+}
+func TestMissingStorageInitializes(t *testing.T) {
+	s, err := NewStore(t.TempDir() + "/missing.json")
+	if err != nil {
+		t.Fatalf("missing file should not error: %v", err)
+	}
+	defer s.Close()
+}
+func TestValidStorageLoads(t *testing.T) {
+	storePath := t.TempDir() + "/good.json"
+
+	s1, err := NewStore(storePath)
+	if err != nil {
+		t.Fatalf("new store error: %v", err)
+	}
+
+	s1.Create(&Link{Code: "x", URL: "https://example.com"})
+
+	// Close once to flush persisted data before reopening.
+	s1.Close()
+
+	s2, err := NewStore(storePath)
+	if err != nil {
+		t.Fatalf("load valid error: %v", err)
+	}
+	defer s2.Close()
+
+	if s2.Get("x") == nil {
+		t.Fatal("valid storage lost")
+	}
+}
+func TestQuarantineFailureSurfaced(t *testing.T) {
+	// Force rename failure by creating .corrupt as a directory
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "bad.json")
+	os.WriteFile(storePath, []byte("bad"), 0644)
+	// Create .corrupt directory so rename to file fails
+	os.Mkdir(storePath+".corrupt", 0755)
+	_, err := NewStore(storePath)
+	if err == nil {
+		t.Fatal("expected error when quarantine rename fails")
+	}
+	// Original corrupt data must remain intact
+	data, readErr := os.ReadFile(storePath)
+	if readErr != nil {
+		t.Fatalf("original file missing after failed quarantine: %v", readErr)
+	}
+	if string(data) != "bad" {
+		t.Fatalf("original corrupt bytes lost")
 	}
 }

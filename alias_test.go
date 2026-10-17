@@ -12,7 +12,10 @@ import (
 // everyone else must get the same 409 a sequential duplicate gets, and the
 // winner's link and delete token must be the ones that stay stored.
 func TestConcurrentCreatesSameAlias(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 
 	const rounds = 100
@@ -88,7 +91,10 @@ func TestConcurrentCreatesSameAlias(t *testing.T) {
 // concurrent calls with the same code, exactly one stores its link and returns
 // true; the others return false and leave the stored link alone.
 func TestStoreCreateIsAtomic(t *testing.T) {
-	store := NewStore(t.TempDir() + "/links.json")
+	store, err := NewStore(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer store.Close()
 
 	const rounds = 200

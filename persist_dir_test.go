@@ -17,11 +17,17 @@ import (
 func TestPersistsIntoMissingDirectory(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "data", "links.json")
 
-	srv1 := NewServer(storePath)
+	srv1, err := NewServer(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	create(t, srv1, `{"url": "https://go.dev", "alias": "godev"}`)
 	srv1.store.Close()
 
-	srv2 := NewServer(storePath)
+	srv2, err := NewServer(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv2.store.Close()
 	rec := do(t, srv2, "GET", "/godev", "")
 	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://go.dev" {
@@ -49,6 +55,7 @@ func (b *lockedBuffer) String() string {
 
 // If the file really cannot be written (here its parent "folder" is a regular
 // file, so it can never be created), the failure must be reported, not dropped.
+
 func TestSaveFailureIsLogged(t *testing.T) {
 	dir := t.TempDir()
 	blocker := filepath.Join(dir, "blocker")
@@ -57,10 +64,19 @@ func TestSaveFailureIsLogged(t *testing.T) {
 	}
 
 	var logged lockedBuffer
+	previousOutput := log.Writer()
 	log.SetOutput(&logged)
-	defer log.SetOutput(os.Stderr)
+	defer log.SetOutput(previousOutput)
 
-	srv := NewServer(filepath.Join(blocker, "links.json"))
+	srv, err := NewServer(filepath.Join(dir, "links.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.store.Close()
+
+	// Initialization succeeds, so the test specifically exercises a save failure.
+	srv.store.filePath = filepath.Join(blocker, "links.json")
+
 	create(t, srv, `{"url": "https://go.dev", "alias": "godev"}`)
 	srv.store.Close() // waits for the save worker to finish
 
