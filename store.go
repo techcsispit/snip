@@ -1,10 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -26,6 +30,7 @@ type Store struct {
 	saveCh   chan struct{}
 	wg       sync.WaitGroup
 	closed   bool
+	lockFile *os.File
 }
 
 type persistedLink struct {
@@ -38,15 +43,47 @@ type persistedLink struct {
 }
 
 func NewStore(filePath string) *Store {
+	s, err := OpenStore(filePath)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+// OpenStore opens a store for exclusive use by this process. Keeping the lock
+// for the lifetime of the store prevents two server instances from replacing
+// the same JSON file with independent, stale snapshots.
+func OpenStore(filePath string) (*Store, error) {
+	lockFile, err := acquireStoreLock(storeLockPath(filePath))
+	if err != nil {
+		return nil, fmt.Errorf("could not acquire exclusive lock for store %q (another server may be using it): %w", filePath, err)
+	}
+
 	s := &Store{
 		links:    make(map[string]*Link),
 		filePath: filePath,
 		saveCh:   make(chan struct{}, 1),
+		lockFile: lockFile,
 	}
 	s.load()
 	s.wg.Add(1)
 	go s.saveWorker()
-	return s
+	return s, nil
+}
+
+func storeLockPath(filePath string) string {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		absPath = filepath.Clean(filePath)
+	}
+	if resolvedDir, err := filepath.EvalSymlinks(filepath.Dir(absPath)); err == nil {
+		absPath = filepath.Join(resolvedDir, filepath.Base(absPath))
+	}
+	if runtime.GOOS == "windows" {
+		absPath = strings.ToLower(absPath)
+	}
+	sum := sha256.Sum256([]byte(absPath))
+	return filepath.Join(os.TempDir(), fmt.Sprintf("snip-store-%x.lock", sum))
 }
 
 func (s *Store) load() {
@@ -159,6 +196,9 @@ func (s *Store) Close() {
 
 	close(s.saveCh)
 	s.wg.Wait()
+	if err := releaseStoreLock(s.lockFile); err != nil {
+		log.Printf("could not release lock for %s: %v", s.filePath, err)
+	}
 }
 
 func (s *Store) Get(code string) *Link {

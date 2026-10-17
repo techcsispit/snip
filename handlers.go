@@ -22,14 +22,26 @@ type Server struct {
 }
 
 func NewServer(storePath string) *Server {
-	s := &Server{store: NewStore(storePath), mux: http.NewServeMux()}
+	s, err := OpenServer(storePath)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+func OpenServer(storePath string) (*Server, error) {
+	store, err := OpenStore(storePath)
+	if err != nil {
+		return nil, err
+	}
+	s := &Server{store: store, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /{$}", s.index)
 	s.mux.HandleFunc("POST /api/links", s.createLink)
 	s.mux.HandleFunc("GET /api/links", s.listLinks)
 	s.mux.HandleFunc("GET /api/links/{code}", s.linkStats)
 	s.mux.HandleFunc("DELETE /api/links/{code}", s.deleteLink)
 	s.mux.HandleFunc("GET /{code}", s.follow)
-	return s
+	return s, nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

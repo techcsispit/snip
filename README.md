@@ -12,6 +12,8 @@ go test ./...
 ```
 
 Set `STORE_PATH` to use a different file than `links.json`.
+Only one server can use a given `STORE_PATH` at a time; a second server exits
+instead of risking overwriting links with a stale copy of the file.
 
 ## API
 
