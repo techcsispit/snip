@@ -19,7 +19,10 @@ func main() {
 		storePath = path
 	}
 
-	srv := NewServer(storePath)
+	srv, err := OpenServer(storePath)
+	if err != nil {
+		log.Fatalf("could not open store: %v", err)
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
