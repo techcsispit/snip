@@ -11,7 +11,10 @@ import (
 
 // README: "Custom aliases are 3 to 20 letters, digits, `-` or `_`."
 func TestAliasLengthBounds(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	for _, tc := range []struct {
 		alias string
@@ -32,7 +35,10 @@ func TestAliasLengthBounds(t *testing.T) {
 
 // README: "A code that doesn't exist is a `404`."
 func TestUnknownCodeIsNotFound(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/nope123"},
@@ -46,7 +52,10 @@ func TestUnknownCodeIsNotFound(t *testing.T) {
 
 // README: "A link with an expiry works until it expires, then returns `410`."
 func TestExpiredLinkReturnsGone(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	create(t, srv, `{"url": "https://go.dev", "alias": "short-lived", "expires_in": 1}`)
 
@@ -90,7 +99,10 @@ func listCodes(t *testing.T, srv *Server, path string) []string {
 
 // README: "`GET /api/links?limit=N` | Newest links first, 20 by default"
 func TestListIsNewestFirst(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	createLinks(t, srv, 5)
 
@@ -101,7 +113,10 @@ func TestListIsNewestFirst(t *testing.T) {
 }
 
 func TestListDefaultsToTwenty(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	createLinks(t, srv, 25)
 
@@ -115,7 +130,10 @@ func TestListDefaultsToTwenty(t *testing.T) {
 }
 
 func TestListLimit(t *testing.T) {
-	srv := NewServer(t.TempDir() + "/links.json")
+	srv, err := NewServer(t.TempDir() + "/links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv.store.Close()
 	createLinks(t, srv, 25)
 

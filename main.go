@@ -19,7 +19,10 @@ func main() {
 		storePath = path
 	}
 
-	srv := NewServer(storePath)
+	srv, err := NewServer(storePath)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)

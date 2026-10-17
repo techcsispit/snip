@@ -17,11 +17,17 @@ import (
 func TestPersistsIntoMissingDirectory(t *testing.T) {
 	storePath := filepath.Join(t.TempDir(), "data", "links.json")
 
-	srv1 := NewServer(storePath)
+	srv1, err := NewServer(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	create(t, srv1, `{"url": "https://go.dev", "alias": "godev"}`)
 	srv1.store.Close()
 
-	srv2 := NewServer(storePath)
+	srv2, err := NewServer(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer srv2.store.Close()
 	rec := do(t, srv2, "GET", "/godev", "")
 	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://go.dev" {
@@ -60,7 +66,10 @@ func TestSaveFailureIsLogged(t *testing.T) {
 	log.SetOutput(&logged)
 	defer log.SetOutput(os.Stderr)
 
-	srv := NewServer(filepath.Join(blocker, "links.json"))
+	srv, err := NewServer(filepath.Join(blocker, "links.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	create(t, srv, `{"url": "https://go.dev", "alias": "godev"}`)
 	srv.store.Close() // waits for the save worker to finish
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -44,9 +45,7 @@ func NewStore(filePath string) (*Store, error) {
 		saveCh:   make(chan struct{}, 1),
 	}
 	if err := s.load(); err != nil {
-		s.wg.Add(1)
-		go s.saveWorker()
-		return s, err
+		return nil, err
 	}
 	s.wg.Add(1)
 	go s.saveWorker()
@@ -65,7 +64,11 @@ func (s *Store) load() error {
 	var persisted []persistedLink
 	if err := json.Unmarshal(data, &persisted); err != nil {
 		// Quarantine corrupt data; preserve original for inspection
-		if renameErr := os.Rename(s.filePath, s.filePath+".corrupt"); renameErr != nil {
+		corruptPath := s.filePath + ".corrupt"
+		if _, statErr := os.Stat(corruptPath); statErr == nil {
+			return fmt.Errorf("quarantine target exists: %s", corruptPath)
+		}
+		if renameErr := os.Rename(s.filePath, corruptPath); renameErr != nil {
 			return renameErr // quarantine failure must not hide original error
 		}
 		return err // surface JSON decode failure
