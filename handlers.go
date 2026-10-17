@@ -112,7 +112,7 @@ func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
 	} else {
 		for {
 			link.Code = randomString(codeChars, 6)
-			if s.store.Create(link) {
+			if validAlias(link.Code) && s.store.Create(link) {
 				break
 			}
 		}
