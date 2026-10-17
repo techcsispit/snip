@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -536,5 +537,16 @@ func TestConcurrentFollowAndDelete(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("after delete: got status %d, want 404", rec.Code)
+	}
+}
+
+func TestCorruptStoragePreserved(t *testing.T) {
+	storePath := t.TempDir() + "/bad.json"
+	os.WriteFile(storePath, []byte("bad"), 0644)
+	s, _ := NewStore(storePath)
+	defer s.Close()
+	// Original corrupt file preserved as .corrupt
+	if _, err := os.Stat(storePath + ".corrupt"); err != nil {
+		t.Fatalf("corrupt file not preserved: %v", err)
 	}
 }

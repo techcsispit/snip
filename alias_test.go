@@ -88,7 +88,7 @@ func TestConcurrentCreatesSameAlias(t *testing.T) {
 // concurrent calls with the same code, exactly one stores its link and returns
 // true; the others return false and leave the stored link alone.
 func TestStoreCreateIsAtomic(t *testing.T) {
-	store := NewStore(t.TempDir() + "/links.json")
+	store, _ := NewStore(t.TempDir() + "/links.json")
 	defer store.Close()
 
 	const rounds = 200

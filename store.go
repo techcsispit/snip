@@ -37,30 +37,38 @@ type persistedLink struct {
 	DeleteToken string     `json:"delete_token"`
 }
 
-func NewStore(filePath string) *Store {
+func NewStore(filePath string) (*Store, error) {
 	s := &Store{
 		links:    make(map[string]*Link),
 		filePath: filePath,
 		saveCh:   make(chan struct{}, 1),
 	}
-	s.load()
+	if err := s.load(); err != nil {
+		s.wg.Add(1)
+		go s.saveWorker()
+		return s, err
+	}
 	s.wg.Add(1)
 	go s.saveWorker()
-	return s
+	return s, nil
 }
 
-func (s *Store) load() {
+func (s *Store) load() error {
 	data, err := os.ReadFile(s.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return
+			return nil // genuinely missing file is not an error
 		}
-		return
+		return err // unreadable file is an error
 	}
 
 	var persisted []persistedLink
 	if err := json.Unmarshal(data, &persisted); err != nil {
-		return
+		// Quarantine corrupt data; preserve original for inspection
+		if renameErr := os.Rename(s.filePath, s.filePath+".corrupt"); renameErr != nil {
+			return renameErr // quarantine failure must not hide original error
+		}
+		return err // surface JSON decode failure
 	}
 
 	s.mu.Lock()
@@ -75,6 +83,7 @@ func (s *Store) load() {
 			deleteToken: pl.DeleteToken,
 		}
 	}
+	return nil
 }
 
 func (s *Store) saveWorker() {

@@ -22,7 +22,8 @@ type Server struct {
 }
 
 func NewServer(storePath string) *Server {
-	s := &Server{store: NewStore(storePath), mux: http.NewServeMux()}
+	store, _ := NewStore(storePath)
+	s := &Server{store: store, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /{$}", s.index)
 	s.mux.HandleFunc("POST /api/links", s.createLink)
 	s.mux.HandleFunc("GET /api/links", s.listLinks)
