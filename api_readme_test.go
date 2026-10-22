@@ -139,3 +139,49 @@ func TestNegativeExpiresInReturnsBadRequest(t *testing.T) {
 	}
 }
 
+func TestListExcludesExpiredLinks(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+
+	create(t, srv, `{"url": "https://go.dev", "alias": "alive-link"}`)
+	create(t, srv, `{"url": "https://go.dev", "alias": "dead-link", "expires_in": 1}`)
+
+	time.Sleep(1100 * time.Millisecond)
+
+	codes := listCodes(t, srv, "/api/links")
+	for _, code := range codes {
+		if code == "dead-link" {
+			t.Fatalf("expected expired link to be excluded from /api/links, but found: %s", code)
+		}
+	}
+
+	foundAlive := false
+	for _, code := range codes {
+		if code == "alive-link" {
+			foundAlive = true
+			break
+		}
+	}
+	if !foundAlive {
+		t.Fatalf("expected active link to remain in /api/links")
+	}
+}
+
+func TestListAllExpiredReturnsEmptyArrayNotNil(t *testing.T) {
+	srv := NewServer(t.TempDir() + "/links.json")
+	defer srv.store.Close()
+
+	create(t, srv, `{"url": "https://go.dev", "alias": "expired-only", "expires_in": 1}`)
+	time.Sleep(1100 * time.Millisecond)
+
+	rec := do(t, srv, "GET", "/api/links", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/links: got %d, want 200", rec.Code)
+	}
+
+	body := strings.TrimSpace(rec.Body.String())
+	if body != "[]" {
+		t.Fatalf("expected empty array [] when all links expired, got: %s", body)
+	}
+}
+
