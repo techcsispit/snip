@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -563,7 +565,6 @@ func TestReservedAliasesRejected(t *testing.T) {
 			t.Errorf("alias %q: failed to decode response: %v", alias, err)
 		}
 
-		// Ensure the reserved name was not stored in links
 		if link := srv.store.Get(alias); link != nil {
 			t.Errorf("alias %q should not be stored, found: %+v", alias, link)
 		}
@@ -592,3 +593,94 @@ func TestReservedAliasSubstringsAllowed(t *testing.T) {
 	}
 }
 
+func TestCorruptStoragePreserved(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "bad.json")
+	if err := os.WriteFile(storePath, []byte("bad"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := OpenStore(storePath)
+	if err == nil {
+		if s != nil {
+			s.Close()
+		}
+		t.Fatal("expected an error for corrupt storage")
+	}
+	if s != nil {
+		s.Close()
+	}
+	if _, err := os.Stat(storePath + ".corrupt"); err != nil {
+		t.Fatalf("expected quarantined file: %v", err)
+	}
+	if _, err := os.Stat(storePath); !os.IsNotExist(err) {
+		t.Fatalf("expected original corrupt file to be moved, stat error: %v", err)
+	}
+}
+
+func TestCorruptStorageErrorPropagated(t *testing.T) {
+	storePath := t.TempDir() + "/bad.json"
+	os.WriteFile(storePath, []byte("bad"), 0644)
+	s, err := OpenStore(storePath)
+	if err == nil {
+		if s != nil {
+			s.Close()
+		}
+		t.Fatal("expected error for corrupt storage")
+	}
+	if s != nil {
+		s.Close()
+	}
+	// Per contract: nil on corrupt init; must not be usable
+	if _, err := os.Stat(storePath + ".corrupt"); err != nil {
+		t.Fatalf("corrupt file not preserved: %v", err)
+	}
+	// Original bytes preserved
+	data, _ := os.ReadFile(storePath + ".corrupt")
+	if string(data) != "bad" {
+		t.Fatalf("original bytes lost")
+	}
+}
+func TestMissingStorageInitializes(t *testing.T) {
+	s, err := OpenStore(t.TempDir() + "/missing.json")
+	if err != nil {
+		t.Fatalf("missing file should not error: %v", err)
+	}
+	defer s.Close()
+}
+func TestValidStorageLoads(t *testing.T) {
+	storePath := t.TempDir() + "/good.json"
+
+	s1 := NewStore(storePath)
+
+	s1.Create(&Link{Code: "x", URL: "https://example.com"})
+
+	// Close once to flush persisted data before reopening.
+	s1.Close()
+
+	s2 := NewStore(storePath)
+	defer s2.Close()
+
+	if s2.Get("x") == nil {
+		t.Fatal("valid storage lost")
+	}
+}
+func TestQuarantineFailureSurfaced(t *testing.T) {
+	// Force rename failure by creating .corrupt as a directory
+	dir := t.TempDir()
+	storePath := filepath.Join(dir, "bad.json")
+	os.WriteFile(storePath, []byte("bad"), 0644)
+	// Create .corrupt directory so rename to file fails
+	os.Mkdir(storePath+".corrupt", 0755)
+	_, err := OpenStore(storePath)
+	if err == nil {
+		t.Fatal("expected error when quarantine rename fails")
+	}
+	// Original corrupt data must remain intact
+	data, readErr := os.ReadFile(storePath)
+	if readErr != nil {
+		t.Fatalf("original file missing after failed quarantine: %v", readErr)
+	}
+	if string(data) != "bad" {
+		t.Fatalf("original corrupt bytes lost")
+	}
+}

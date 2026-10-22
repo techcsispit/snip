@@ -6,14 +6,14 @@ A link shortener written in Go, using only the standard library. Links are persi
 
 You need Go 1.22 or newer.
 
-```
+```bash
 go run .        # http://localhost:8080
 go test ./...
 ```
 
 Set `STORE_PATH` to use a different file than `links.json`.
-Only one server can use a given `STORE_PATH` at a time; a second server exits
-instead of risking overwriting links with a stale copy of the file.
+
+Only one server can use a given `STORE_PATH` at a time; a second server exits instead of risking overwriting links with a stale copy of the file.
 
 ## API
 
@@ -25,7 +25,7 @@ instead of risking overwriting links with a stale copy of the file.
 | `DELETE /api/links/{code}` | Deletes a link. Needs the `X-Delete-Token` header |
 | `GET /api/links?limit=N` | Newest links first, 20 by default |
 
-```
+```bash
 curl -X POST localhost:8080/api/links -d '{"url": "https://go.dev", "alias": "godev"}'
 curl -i localhost:8080/godev
 ```
@@ -37,6 +37,7 @@ curl -i localhost:8080/godev
 - Custom aliases are 3 to 20 letters, digits, `-` or `_`. A taken alias is a `409`.
 - Reserved names (`api`, `static`, `health`, `robots`, `favicon`) cannot be used as custom aliases and return a `400`.
 - A code that doesn't exist is a `404`.
+- If storage is corrupt, the server preserves the original file as `<STORE_PATH>.corrupt` and exits with an error. On the next start, if that quarantine file already exists, it is left untouched and startup fails again until the issue is resolved manually.
 - A link with an expiry works until it expires, then returns `410`.
 - Each visit to `GET /{code}` counts as one click.
 - Deleting needs the right token. A missing or wrong token is a `403`.

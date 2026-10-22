@@ -138,4 +138,3 @@ func TestNegativeExpiresInReturnsBadRequest(t *testing.T) {
 		t.Fatalf("POST /api/links with negative expires_in: got %d, want 400", rec.Code)
 	}
 }
-

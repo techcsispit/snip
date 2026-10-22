@@ -34,6 +34,7 @@ func OpenServer(storePath string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	s := &Server{store: store, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /{$}", s.index)
 	s.mux.HandleFunc("POST /api/links", s.createLink)
@@ -185,7 +186,9 @@ func (s *Server) deleteLink(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listLinks(w http.ResponseWriter, r *http.Request) {
 	links := s.store.List()
-	sort.Slice(links, func(i, j int) bool { return links[i].CreatedAt.After(links[j].CreatedAt) })
+	sort.Slice(links, func(i, j int) bool {
+		return links[i].CreatedAt.After(links[j].CreatedAt)
+	})
 	limit := 20
 	if q := r.URL.Query().Get("limit"); q != "" {
 		n, err := strconv.Atoi(q)
