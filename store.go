@@ -65,7 +65,14 @@ func OpenStore(filePath string) (*Store, error) {
 		saveCh:   make(chan struct{}, 1),
 		lockFile: lockFile,
 	}
-	s.load()
+
+	if err := s.load(); err != nil {
+		if releaseErr := releaseStoreLock(lockFile); releaseErr != nil {
+			log.Printf("could not release lock for %s: %v", filePath, releaseErr)
+		}
+		return nil, err
+	}
+
 	s.wg.Add(1)
 	go s.saveWorker()
 	return s, nil
@@ -86,18 +93,28 @@ func storeLockPath(filePath string) string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("snip-store-%x.lock", sum))
 }
 
-func (s *Store) load() {
+func (s *Store) load() error {
 	data, err := os.ReadFile(s.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return
+			return nil // genuinely missing file is not an error
 		}
-		return
+		return err // unreadable file is an error
 	}
 
 	var persisted []persistedLink
 	if err := json.Unmarshal(data, &persisted); err != nil {
-		return
+		// Quarantine corrupt data; preserve original for inspection.
+		corruptPath := s.filePath + ".corrupt"
+		if _, statErr := os.Stat(corruptPath); statErr == nil {
+			return fmt.Errorf("cannot quarantine corrupt storage: target already exists: %s: %w", corruptPath, err)
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("cannot check corrupt storage path %s: %w", corruptPath, statErr)
+		}
+		if renameErr := os.Rename(s.filePath, corruptPath); renameErr != nil {
+			return fmt.Errorf("cannot quarantine corrupt storage %s: %w (original parse error: %v)", s.filePath, renameErr, err)
+		}
+		return fmt.Errorf("corrupt storage quarantined at %s: %w", corruptPath, err)
 	}
 
 	s.mu.Lock()
@@ -112,6 +129,7 @@ func (s *Store) load() {
 			deleteToken: pl.DeleteToken,
 		}
 	}
+	return nil
 }
 
 func (s *Store) saveWorker() {
@@ -208,7 +226,7 @@ func (s *Store) Get(code string) *Link {
 	if link == nil {
 		return nil
 	}
-	// Return a copy so internal state doesn't escape
+	// Return a copy so internal state doesn't escape.
 	copy := *link
 	return &copy
 }
@@ -218,6 +236,10 @@ func (s *Store) Get(code string) *Link {
 // same code exactly one returns true.
 func (s *Store) Create(link *Link) bool {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return false
+	}
 	if _, taken := s.links[link.Code]; taken {
 		s.mu.Unlock()
 		return false
@@ -230,6 +252,10 @@ func (s *Store) Create(link *Link) bool {
 
 func (s *Store) Delete(code string) {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	delete(s.links, code)
 	s.mu.Unlock()
 	s.requestSave()
@@ -237,6 +263,10 @@ func (s *Store) Delete(code string) {
 
 func (s *Store) IncrementClicks(code string) {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
 	if link, ok := s.links[code]; ok {
 		link.Clicks++
 	}
@@ -249,7 +279,7 @@ func (s *Store) List() []*Link {
 	defer s.mu.RUnlock()
 	list := make([]*Link, 0, len(s.links))
 	for _, link := range s.links {
-		// Return copies so internal state doesn't escape
+		// Return copies so internal state doesn't escape.
 		copy := *link
 		list = append(list, &copy)
 	}

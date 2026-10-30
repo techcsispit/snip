@@ -24,6 +24,13 @@ func main() {
 		log.Fatalf("could not open store: %v", err)
 	}
 
+	go func() {
+		log.Printf("Listening on :%s", port)
+		if err := http.ListenAndServe(":"+port, srv); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 

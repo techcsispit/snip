@@ -184,4 +184,3 @@ func TestListAllExpiredReturnsEmptyArrayNotNil(t *testing.T) {
 		t.Fatalf("expected empty array [] when all links expired, got: %s", body)
 	}
 }
-
